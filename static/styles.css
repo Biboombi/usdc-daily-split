@@ -261,6 +261,7 @@ textarea {
 
 .organizer,
 .note,
+.wallet-soon,
 .person-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -278,6 +279,39 @@ code {
 .note {
   margin-top: 12px;
   color: var(--soft);
+}
+
+.wallet-soon {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.wallet-soon span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.wallet-soon strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.wallet-soon p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .people-list {
@@ -367,6 +401,11 @@ code {
 
   .person-card {
     grid-template-columns: 1fr;
+  }
+
+  .wallet-soon {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .person-actions {

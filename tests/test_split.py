@@ -1,7 +1,12 @@
 import unittest
 from decimal import Decimal
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
-from app.main import money, split_evenly
+from fastapi.testclient import TestClient
+
+import app.main as app_main
+from app.main import app, money, split_evenly
 
 
 class SplitTests(unittest.TestCase):
@@ -23,6 +28,46 @@ class SplitTests(unittest.TestCase):
     def test_requires_participant(self):
         with self.assertRaises(ValueError):
             split_evenly(Decimal("10.00"), 0)
+
+
+class PaymentIntentTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = TemporaryDirectory()
+        self.original_db_path = app_main.DATABASE_PATH
+        app_main.DATABASE_PATH = Path(self.temp_dir.name) / "test.sqlite3"
+        app_main.init_db()
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        app_main.DATABASE_PATH = self.original_db_path
+        self.temp_dir.cleanup()
+
+    def test_payment_intent_ties_arc_usdc_to_participant(self):
+        created = self.client.post(
+            "/api/bills",
+            json={
+                "title": "Dinner",
+                "total_amount": "10.00",
+                "organizer_name": "Alex",
+                "organizer_wallet": "0x8075dE962BcEf1dF183b82dAD30Ac260F61798fF",
+                "participants": [{"name": "Me"}, {"name": "Friend"}],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        payload = created.json()
+        participant_id = payload["participants"][0]["id"]
+
+        response = self.client.get(f"/api/participants/{participant_id}/payment-intent")
+
+        self.assertEqual(response.status_code, 200)
+        intent = response.json()
+        self.assertEqual(intent["bill_id"], payload["bill"]["id"])
+        self.assertEqual(intent["participant_id"], participant_id)
+        self.assertEqual(intent["chain_id"], 5042002)
+        self.assertEqual(intent["token"]["symbol"], "USDC")
+        self.assertEqual(intent["transfer"]["amount"], "5.00")
+        self.assertEqual(intent["transfer"]["amount_units"], "5000000")
+        self.assertEqual(intent["transfer"]["to"], payload["bill"]["organizer_wallet"])
 
 
 if __name__ == "__main__":

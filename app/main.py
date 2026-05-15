@@ -22,6 +22,7 @@ DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", ROOT / "daily_split.sqlite3
 ARC_CHAIN_ID = 5_042_002
 ARC_RPC_URL = "https://rpc.testnet.arc.network"
 ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000"
+USDC_DECIMALS = 6
 
 
 def now_iso() -> str:
@@ -30,6 +31,10 @@ def now_iso() -> str:
 
 def money(value: Decimal | float | str) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def usdc_units(value: Decimal | str) -> str:
+    return str(int(Decimal(str(value)) * (10 ** USDC_DECIMALS)))
 
 
 def split_evenly(total: Decimal, count: int) -> list[Decimal]:
@@ -150,7 +155,7 @@ def config() -> dict:
         "chainName": "Arc Testnet",
         "rpcUrl": ARC_RPC_URL,
         "usdcAddress": ARC_USDC_ADDRESS,
-        "usdcDecimals": 6,
+        "usdcDecimals": USDC_DECIMALS,
     }
 
 
@@ -243,6 +248,62 @@ def get_bill(bill_id: str) -> dict:
             "total_paid": str(total_paid),
             "outstanding": str(outstanding),
         },
+    }
+
+
+@app.get("/api/participants/{participant_id}/payment-intent")
+def payment_intent(participant_id: str) -> dict:
+    with db() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                p.id AS participant_id,
+                p.name AS participant_name,
+                p.amount_due,
+                p.paid,
+                b.id AS bill_id,
+                b.title AS bill_title,
+                b.organizer_name,
+                b.organizer_wallet
+            FROM participants p
+            JOIN bills b ON b.id = p.bill_id
+            WHERE p.id = ?
+            """,
+            (participant_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Participant not found")
+        if row["paid"]:
+            raise HTTPException(status_code=400, detail="Participant is already marked paid")
+
+    amount_due = money(row["amount_due"])
+    return {
+        "bill_id": row["bill_id"],
+        "bill_title": row["bill_title"],
+        "participant_id": row["participant_id"],
+        "participant_name": row["participant_name"],
+        "chain_id": ARC_CHAIN_ID,
+        "network": "Arc Testnet",
+        "token": {
+            "symbol": "USDC",
+            "address": ARC_USDC_ADDRESS,
+            "decimals": USDC_DECIMALS,
+        },
+        "transfer": {
+            "to": row["organizer_wallet"],
+            "recipient_name": row["organizer_name"],
+            "amount": str(amount_due),
+            "amount_units": usdc_units(amount_due),
+            "method": "transfer(address,uint256)",
+            "native_value": "0",
+        },
+        "guardrails": [
+            "Arc Testnet only",
+            "USDC token transfer only",
+            "Recipient must be the bill organizer",
+            "Amount must match this participant share",
+            "Backend stores status only and never signs transactions",
+        ],
     }
 
 

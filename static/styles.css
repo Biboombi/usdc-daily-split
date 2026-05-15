@@ -261,6 +261,7 @@ textarea {
 
 .organizer,
 .note,
+.settlement-card,
 .wallet-soon,
 .person-card {
   border: 1px solid var(--line);
@@ -279,6 +280,30 @@ code {
 .note {
   margin-top: 12px;
   color: var(--soft);
+}
+
+.settlement-card {
+  margin-top: 12px;
+}
+
+.settlement-card span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.settlement-card strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.settlement-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .wallet-soon {

@@ -73,7 +73,7 @@
       <div id="empty-state" class="empty">
         <p class="eyebrow">Share and settle</p>
         <h2>Daily bills without awkward math</h2>
-        <p>Create a bill, share the link, and let each person mark or pay their part in USDC.</p>
+        <p>Create a bill, share the link, and let each person settle their part with Arc Testnet USDC.</p>
       </div>
 
       <div id="bill-view" class="hidden">
@@ -104,6 +104,12 @@
           <span>Organizer</span>
           <strong id="organizer">-</strong>
           <code id="organizer-address">-</code>
+        </div>
+
+        <div class="settlement-card">
+          <span>Arc settlement</span>
+          <strong>Each Pay USDC action uses a backend payment intent.</strong>
+          <p>The intent locks the Arc Testnet chain, USDC token, bill participant, recipient, and exact share before the wallet transfer is requested.</p>
         </div>
 
         <div class="wallet-soon">

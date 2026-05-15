@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>USDC Daily Split</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Arc Testnet USDC</p>
+      <h1>USDC Daily Split</h1>
+    </div>
+    <div class="top-actions">
+      <span id="wallet-pill" class="pill">Wallet disconnected</span>
+      <button id="connect-wallet" class="btn secondary" type="button">Connect</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel create-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Create</p>
+          <h2>Split a bill</h2>
+        </div>
+        <button id="reset-form" class="icon-btn" type="button" title="Reset form">Reset</button>
+      </div>
+
+      <form id="bill-form" class="form">
+        <label>
+          Bill title
+          <input id="title" required maxlength="120" placeholder="Dinner, groceries, trip fuel">
+        </label>
+
+        <div class="grid-2">
+          <label>
+            Total USDC
+            <input id="total" type="number" required min="0.01" step="0.01" placeholder="48.90">
+          </label>
+          <label>
+            Your name
+            <input id="organizer-name" required maxlength="80" placeholder="Alex">
+          </label>
+        </div>
+
+        <label>
+          Your wallet address
+          <input id="organizer-wallet" required maxlength="80" placeholder="0x...">
+        </label>
+
+        <label>
+          Note
+          <textarea id="note" maxlength="300" rows="3" placeholder="Optional note for your friends"></textarea>
+        </label>
+
+        <div class="participants-head">
+          <span>People</span>
+          <button id="add-person" class="btn tiny" type="button">Add person</button>
+        </div>
+        <div id="participants" class="participants"></div>
+
+        <button class="btn primary full" type="submit">Create share link</button>
+      </form>
+    </section>
+
+    <section class="panel bill-panel">
+      <div id="empty-state" class="empty">
+        <p class="eyebrow">Share and settle</p>
+        <h2>Daily bills without awkward math</h2>
+        <p>Create a bill, share the link, and let each person mark or pay their part in USDC.</p>
+      </div>
+
+      <div id="bill-view" class="hidden">
+        <div class="bill-title-row">
+          <div>
+            <p class="eyebrow">Bill</p>
+            <h2 id="bill-title">-</h2>
+          </div>
+          <button id="copy-link" class="btn secondary" type="button">Copy link</button>
+        </div>
+
+        <div class="stats">
+          <div>
+            <span>Total</span>
+            <strong id="bill-total">0.00 USDC</strong>
+          </div>
+          <div>
+            <span>Paid</span>
+            <strong id="bill-paid">0.00 USDC</strong>
+          </div>
+          <div>
+            <span>Outstanding</span>
+            <strong id="bill-outstanding">0.00 USDC</strong>
+          </div>
+        </div>
+
+        <div class="organizer">
+          <span>Organizer</span>
+          <strong id="organizer">-</strong>
+          <code id="organizer-address">-</code>
+        </div>
+
+        <div id="bill-note" class="note hidden"></div>
+        <div id="people-list" class="people-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -200,19 +200,19 @@ async function payWithWallet(participantId) {
   if (!state.wallet) await connectWallet();
   await ensureArcNetwork();
 
-  const participant = state.bill.participants.find((p) => p.id === participantId);
-  const to = state.bill.bill.organizer_wallet;
-  const amount = ethers.parseUnits(participant.amount_due, state.config.usdcDecimals);
+  const intent = await api(`/api/participants/${participantId}/payment-intent`);
+  const to = intent.transfer.to;
+  const amount = BigInt(intent.transfer.amount_units);
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
   const token = new ethers.Contract(
-    state.config.usdcAddress,
+    intent.token.address,
     ["function transfer(address to,uint256 amount) returns (bool)"],
     signer,
   );
 
   try {
-    toast("Confirm USDC transfer in your wallet");
+    toast(`Confirm ${intent.transfer.amount} USDC on ${intent.network}`);
     const tx = await token.transfer(to, amount);
     await markPaid(participantId, true, tx.hash);
     toast("Payment submitted");

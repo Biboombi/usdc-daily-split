@@ -141,7 +141,7 @@ function renderBill(data) {
         </div>
         <div class="person-actions">
           ${paid ? "" : `<button class="btn secondary" type="button" onclick="payWithWallet('${p.id}')">Pay USDC</button>`}
-          <button class="btn ${paid ? "secondary" : "primary"}" type="button" onclick="markPaid('${p.id}', ${!paid})">${paid ? "Undo" : "Mark paid"}</button>
+          <button class="btn ${paid ? "secondary" : "primary"}" type="button" onclick="markPaid('${p.id}', ${!paid})">${paid ? "Undo" : "Demo mark paid"}</button>
         </div>
       </div>
     `;
@@ -214,8 +214,11 @@ async function payWithWallet(participantId) {
   try {
     toast(`Confirm ${intent.transfer.amount} USDC on ${intent.network}`);
     const tx = await token.transfer(to, amount);
+    toast("Transaction submitted. Waiting for confirmation...");
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) throw new Error("Transaction was not confirmed");
     await markPaid(participantId, true, tx.hash);
-    toast("Payment submitted");
+    toast("Payment confirmed and marked paid");
   } catch (err) {
     toast(err.shortMessage || err.message || "Payment failed");
   }

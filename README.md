@@ -76,6 +76,20 @@ Use persistent disk/storage if you want SQLite data to survive redeploys.
 - Treat this as a payment utility, not financial advice.
 - Use Arc Testnet until you intentionally switch networks.
 
+## Future: Embedded Wallet Support
+
+USDC Daily Split currently supports browser-wallet payments.
+
+In the future, the app may support embedded wallets through Turnkey, allowing users without MetaMask or browser wallets to join and pay using email/passkey onboarding.
+
+Planned guardrails:
+
+- Payments limited to Arc USDC only
+- Recipient must match the bill organizer
+- Amount must match the participant's share
+- No backend custody of user funds
+- No operational wallet until the app needs fees, refunds, or sponsored gas
+
 ## Tests
 
 ```powershell

@@ -69,6 +69,27 @@ class PaymentIntentTests(unittest.TestCase):
         self.assertEqual(intent["transfer"]["amount_units"], "5000000")
         self.assertEqual(intent["transfer"]["to"], payload["bill"]["organizer_wallet"])
 
+    def test_delete_bill_removes_bill(self):
+        created = self.client.post(
+            "/api/bills",
+            json={
+                "title": "Lunch",
+                "total_amount": "12.00",
+                "organizer_name": "Alex",
+                "organizer_wallet": "0x8075dE962BcEf1dF183b82dAD30Ac260F61798fF",
+                "participants": [{"name": "Me"}, {"name": "Friend"}],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        bill_id = created.json()["bill"]["id"]
+
+        deleted = self.client.delete(f"/api/bills/{bill_id}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json()["bill_id"], bill_id)
+
+        missing = self.client.get(f"/api/bills/{bill_id}")
+        self.assertEqual(missing.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

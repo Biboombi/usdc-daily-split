@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>USDC Daily Split</title>
+  <title>Arc USDC Split</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -12,27 +12,37 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Arc Testnet USDC</p>
-      <h1>USDC Daily Split</h1>
-    </div>
+    <div class="brand" aria-hidden="true"></div>
     <div class="top-actions">
+      <button id="scan-qr" class="btn secondary" type="button">Scan QR</button>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
+        <span class="theme-icon" aria-hidden="true">☾</span>
+        <span id="theme-label">Dark</span>
+      </button>
       <span id="wallet-pill" class="pill">Wallet disconnected</span>
       <button id="connect-wallet" class="btn secondary" type="button">Connect</button>
     </div>
   </header>
 
-  <main class="layout">
+  <section class="page-title">
+    <div>
+      <p class="eyebrow">Arc Testnet USDC</p>
+      <h1>Split payments, beautifully.</h1>
+      <p>Create a clean payment link, share it as a QR code, and track settlement without messy group chat math.</p>
+    </div>
+  </section>
+
+  <main class="layout app-grid">
     <section class="panel create-panel">
       <div class="panel-head">
         <div>
           <p class="eyebrow">Create</p>
-          <h2>Split a bill</h2>
+          <h2>New split</h2>
         </div>
         <button id="reset-form" class="icon-btn" type="button" title="Reset form">Reset</button>
       </div>
 
-      <form id="bill-form" class="form">
+      <form id="bill-form" class="form" novalidate>
         <label>
           Bill title
           <input id="title" required maxlength="120" placeholder="Dinner, groceries, trip fuel">
@@ -50,6 +60,20 @@
         </div>
 
         <label>
+          Split mode
+          <select id="split-mode" class="visually-hidden">
+            <option value="equal">Equal split</option>
+            <option value="custom">Custom amounts</option>
+            <option value="percent">Percentages</option>
+          </select>
+          <div class="segmented-control" aria-label="Split mode">
+            <button class="segment active" type="button" data-mode="equal">Equal</button>
+            <button class="segment" type="button" data-mode="custom">Custom</button>
+            <button class="segment" type="button" data-mode="percent">Percent</button>
+          </div>
+        </label>
+
+        <label>
           Your wallet address
           <input id="organizer-wallet" required maxlength="80" placeholder="0x...">
         </label>
@@ -65,6 +89,8 @@
         </div>
         <div id="participants" class="participants"></div>
 
+        <div id="split-preview" class="split-preview"></div>
+
         <button class="btn primary full" type="submit">Create share link</button>
       </form>
     </section>
@@ -72,7 +98,7 @@
     <section class="panel bill-panel">
       <div id="empty-state" class="empty">
         <p class="eyebrow">Share and settle</p>
-        <h2>Daily bills without awkward math</h2>
+        <h2>No split selected</h2>
         <p>Create a bill, share the link, and let each person settle their part with Arc Testnet USDC.</p>
       </div>
 
@@ -107,27 +133,58 @@
         </div>
 
         <div class="settlement-card">
-          <span>Arc settlement</span>
-          <strong>Each Pay USDC action uses a backend payment intent.</strong>
-          <p>The intent locks the Arc Testnet chain, USDC token, bill participant, recipient, and exact share before the wallet transfer is requested.</p>
-        </div>
-
-        <div class="wallet-soon">
           <div>
-            <span>No wallet?</span>
-            <strong>Embedded wallet support coming soon.</strong>
-            <p>Soon you'll be able to pay with email/passkey without installing a browser wallet.</p>
+            <span>Settlement</span>
+            <strong>Pay USDC sends directly to the organizer.</strong>
           </div>
-          <button class="btn secondary" type="button" disabled>Continue with email/passkey</button>
+          <p>Each participant link locks the exact bill, recipient, chain, and amount before the wallet transfer opens.</p>
         </div>
 
         <div id="bill-note" class="note hidden"></div>
+        <div class="bill-tools">
+          <button id="show-qr" class="btn secondary" type="button">Show bill QR</button>
+          <button id="export-bill" class="btn secondary" type="button">Export CSV</button>
+          <button id="refresh-bill" class="btn secondary" type="button">Refresh</button>
+        </div>
+        <div id="qr-card" class="qr-card hidden">
+          <div>
+            <span>Scan to open payment link</span>
+            <strong id="qr-title">Bill link</strong>
+            <code id="qr-url">-</code>
+          </div>
+          <img id="qr-image" alt="Payment QR code">
+        </div>
         <div id="people-list" class="people-list"></div>
       </div>
+    </section>
+
+    <section class="panel dashboard-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Dashboard</p>
+          <h2>Recent split links</h2>
+        </div>
+        <button id="refresh-bills" class="btn secondary" type="button">Refresh</button>
+      </div>
+      <div id="recent-bills" class="recent-bills"></div>
     </section>
   </main>
 
   <div id="toast" class="toast hidden"></div>
+
+  <div id="scan-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="scan-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Camera</p>
+          <h2 id="scan-title">Scan payment QR</h2>
+        </div>
+        <button id="close-scan" class="icon-btn" type="button" title="Close scanner">Close</button>
+      </div>
+      <video id="scan-video" playsinline muted></video>
+      <p class="modal-note">Point the camera at a bill or participant QR code. The link opens automatically.</p>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

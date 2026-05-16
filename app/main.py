@@ -120,7 +120,7 @@ app = FastAPI(title="USDC Daily Split", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -249,6 +249,17 @@ def get_bill(bill_id: str) -> dict:
             "outstanding": str(outstanding),
         },
     }
+
+
+@app.delete("/api/bills/{bill_id}")
+def delete_bill(bill_id: str) -> dict:
+    with db() as conn:
+        bill = conn.execute("SELECT id FROM bills WHERE id = ?", (bill_id,)).fetchone()
+        if not bill:
+            raise HTTPException(status_code=404, detail="Bill not found")
+        conn.execute("DELETE FROM participants WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bills WHERE id = ?", (bill_id,))
+    return {"deleted": True, "bill_id": bill_id}
 
 
 @app.get("/api/participants/{participant_id}/payment-intent")

@@ -37,6 +37,24 @@ function formatAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function explorerTxUrl(txHash) {
+  if (!state.config?.blockExplorerUrl || !txHash) return "";
+  return `${state.config.blockExplorerUrl.replace(/\/$/, "")}/tx/${txHash}`;
+}
+
+function paymentStatusLabel(status) {
+  return {
+    unpaid: "Unpaid",
+    pending: "Pending",
+    confirmed: "Confirmed",
+    failed: "Failed",
+  }[status] || "Unpaid";
+}
+
+function errorTxHash(err) {
+  return err?.transaction?.hash || err?.receipt?.hash || err?.hash || "";
+}
+
 function billUrl(participantId = "") {
   if (!state.bill) return location.href;
   const url = new URL(location.href);
@@ -404,18 +422,21 @@ function renderBill(data) {
   }
 
   $("people-list").innerHTML = participants.map((p) => {
-    const paid = Boolean(p.paid);
+    const status = p.payment_status || (p.paid ? "confirmed" : "unpaid");
+    const paid = status === "confirmed";
+    const canPay = status === "unpaid" || status === "failed";
+    const txUrl = explorerTxUrl(p.paid_tx);
     return `
       <div class="person-card">
         <div class="person-main">
           <strong>${escapeHtml(p.name)} owes ${escapeHtml(p.amount_due)} USDC</strong>
-          <span>${escapeHtml(p.wallet ? formatAddress(p.wallet) : "No wallet saved")} - <b class="${paid ? "status-paid" : "status-unpaid"}">${paid ? "Paid" : "Unpaid"}</b></span>
-          ${p.paid_tx ? `<code>${escapeHtml(p.paid_tx)}</code>` : ""}
+          <span>${escapeHtml(p.wallet ? formatAddress(p.wallet) : "No wallet saved")} - <b class="status-${escapeHtml(status)}">${paymentStatusLabel(status)}</b></span>
+          ${p.paid_tx ? `<a class="tx-link" href="${escapeHtml(txUrl)}" target="_blank" rel="noreferrer">${escapeHtml(p.paid_tx)}</a>` : ""}
         </div>
         <div class="person-actions">
           <button class="btn secondary" type="button" onclick="showParticipantQr('${p.id}')">QR</button>
-          ${paid ? "" : `<button class="btn secondary" type="button" onclick="payWithWallet('${p.id}')">Pay USDC</button>`}
-          <button class="btn ${paid ? "secondary" : "primary"}" type="button" onclick="markPaid('${p.id}', ${!paid})">${paid ? "Undo" : "Mark paid"}</button>
+          ${canPay ? `<button class="btn secondary" type="button" onclick="payWithWallet('${p.id}')">Pay USDC</button>` : ""}
+          ${paid ? `<button class="btn secondary" type="button" onclick="updatePaymentStatus('${p.id}', 'unpaid')">Undo</button>` : ""}
         </div>
       </div>
     `;
@@ -429,14 +450,15 @@ function showParticipantQr(participantId) {
   setQr(title, billUrl(participantId));
 }
 
-async function markPaid(participantId, paid, txHash = "") {
+async function updatePaymentStatus(participantId, status, txHash = "") {
   try {
-    const data = await api(`/api/participants/${participantId}/paid`, {
+    const data = await api(`/api/participants/${participantId}/payment-status`, {
       method: "PATCH",
-      body: JSON.stringify({ paid, tx_hash: txHash }),
+      body: JSON.stringify({ status, tx_hash: txHash }),
     });
     renderBill(data);
-    toast(paid ? "Marked paid" : "Payment status undone");
+    await loadRecentBills();
+    toast(`Payment ${paymentStatusLabel(status).toLowerCase()}`);
   } catch (err) {
     toast(err.message);
   }
@@ -445,7 +467,7 @@ async function markPaid(participantId, paid, txHash = "") {
 function exportCurrentBill() {
   if (!state.bill) return;
   const { bill, participants } = state.bill;
-  const rows = [["bill_id", "title", "participant", "wallet", "amount_due", "paid", "tx_hash"]];
+  const rows = [["bill_id", "title", "participant", "wallet", "amount_due", "payment_status", "tx_hash"]];
   participants.forEach((participant) => {
     rows.push([
       bill.id,
@@ -453,7 +475,7 @@ function exportCurrentBill() {
       participant.name,
       participant.wallet,
       participant.amount_due,
-      participant.paid ? "yes" : "no",
+      participant.payment_status || (participant.paid ? "confirmed" : "unpaid"),
       participant.paid_tx || "",
     ]);
   });
@@ -497,8 +519,9 @@ async function ensureArcNetwork() {
       params: [{
         chainId: chainHex,
         chainName: state.config.chainName,
-        nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+        nativeCurrency: state.config.nativeCurrency,
         rpcUrls: [state.config.rpcUrl],
+        blockExplorerUrls: [state.config.blockExplorerUrl],
       }],
     });
   }
@@ -510,29 +533,35 @@ async function payWithWallet(participantId) {
     toast("Wallet library did not load");
     return;
   }
-  if (!state.wallet) await connectWallet();
-  await ensureArcNetwork();
-
-  const intent = await api(`/api/participants/${participantId}/payment-intent`);
-  const to = intent.transfer.to;
-  const amount = BigInt(intent.transfer.amount_units);
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  const token = new ethers.Contract(
-    intent.token.address,
-    ["function transfer(address to,uint256 amount) returns (bool)"],
-    signer,
-  );
-
   try {
+    if (!state.wallet) await connectWallet();
+    await ensureArcNetwork();
+
+    const intent = await api(`/api/participants/${participantId}/payment-intent`);
+    const to = intent.transfer.to;
+    const amount = BigInt(intent.transfer.amount_units);
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const token = new ethers.Contract(
+      intent.token.address,
+      ["function transfer(address to,uint256 amount) returns (bool)"],
+      signer,
+    );
+
     toast(`Confirm ${intent.transfer.amount} USDC on ${intent.network}`);
     const tx = await token.transfer(to, amount);
-    toast("Transaction submitted. Waiting for confirmation...");
+    await updatePaymentStatus(participantId, "pending", tx.hash);
+    toast(`Submitted: ${formatAddress(tx.hash)}. Waiting for confirmation...`);
     const receipt = await tx.wait();
-    if (!receipt || receipt.status !== 1) throw new Error("Transaction was not confirmed");
-    await markPaid(participantId, true, tx.hash);
-    toast("Payment confirmed and marked paid");
+    if (!receipt || receipt.status !== 1) {
+      await updatePaymentStatus(participantId, "failed", tx.hash);
+      throw new Error("Transaction was not confirmed");
+    }
+    await updatePaymentStatus(participantId, "confirmed", tx.hash);
+    toast("Payment confirmed");
   } catch (err) {
+    const txHash = errorTxHash(err);
+    if (txHash) await updatePaymentStatus(participantId, "failed", txHash);
     toast(err.shortMessage || err.message || "Payment failed");
   }
 }

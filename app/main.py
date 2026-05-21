@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +22,10 @@ DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", ROOT / "daily_split.sqlite3
 ARC_CHAIN_ID = 5_042_002
 ARC_RPC_URL = "https://rpc.testnet.arc.network"
 ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000"
+ARC_EXPLORER_URL = "https://testnet.arcscan.app"
+ARC_FAUCET_URL = "https://faucet.circle.com"
 USDC_DECIMALS = 6
+USDC_GAS_DECIMALS = 18
 
 
 def now_iso() -> str:
@@ -81,12 +84,24 @@ def init_db() -> None:
                 wallet TEXT NOT NULL DEFAULT '',
                 amount_due TEXT NOT NULL,
                 paid INTEGER NOT NULL DEFAULT 0,
+                payment_status TEXT NOT NULL DEFAULT 'unpaid',
                 paid_tx TEXT NOT NULL DEFAULT '',
                 paid_at TEXT,
                 FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
             );
             """
         )
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(participants)").fetchall()
+        }
+        if "payment_status" not in columns:
+            conn.execute(
+                "ALTER TABLE participants ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'"
+            )
+            conn.execute(
+                "UPDATE participants SET payment_status = CASE WHEN paid = 1 THEN 'confirmed' ELSE 'unpaid' END"
+            )
 
 
 class ParticipantIn(BaseModel):
@@ -111,8 +126,8 @@ class BillCreate(BaseModel):
     participants: list[ParticipantIn] = Field(min_length=1, max_length=40)
 
 
-class PaidUpdate(BaseModel):
-    paid: bool = True
+class PaymentStatusUpdate(BaseModel):
+    status: Literal["unpaid", "pending", "confirmed", "failed"]
     tx_hash: str = ""
 
 
@@ -156,6 +171,13 @@ def config() -> dict:
         "rpcUrl": ARC_RPC_URL,
         "usdcAddress": ARC_USDC_ADDRESS,
         "usdcDecimals": USDC_DECIMALS,
+        "nativeCurrency": {
+            "name": "USDC",
+            "symbol": "USDC",
+            "decimals": USDC_GAS_DECIMALS,
+        },
+        "blockExplorerUrl": ARC_EXPLORER_URL,
+        "faucetUrl": ARC_FAUCET_URL,
     }
 
 
@@ -214,7 +236,10 @@ def list_bills() -> dict:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT b.*, COUNT(p.id) AS participant_count, SUM(p.paid) AS paid_count
+            SELECT
+                b.*,
+                COUNT(p.id) AS participant_count,
+                COALESCE(SUM(CASE WHEN p.payment_status = 'confirmed' THEN 1 ELSE 0 END), 0) AS paid_count
             FROM bills b
             LEFT JOIN participants p ON p.bill_id = b.id
             GROUP BY b.id
@@ -237,13 +262,23 @@ def get_bill(bill_id: str) -> dict:
         ).fetchall()
 
     participant_dicts = [dict(row) for row in participants]
-    total_paid = sum(money(p["amount_due"]) for p in participant_dicts if p["paid"])
+    for participant in participant_dicts:
+        if not participant.get("payment_status"):
+            participant["payment_status"] = "confirmed" if participant["paid"] else "unpaid"
+        participant["paid"] = int(participant["payment_status"] == "confirmed")
+
+    total_paid = sum(
+        money(p["amount_due"])
+        for p in participant_dicts
+        if p["payment_status"] == "confirmed"
+    ) or Decimal("0.00")
+    total_paid = money(total_paid)
     outstanding = money(Decimal(str(bill["total_amount"])) - total_paid)
     return {
         "bill": dict(bill),
         "participants": participant_dicts,
         "summary": {
-            "paid_count": sum(1 for p in participant_dicts if p["paid"]),
+            "paid_count": sum(1 for p in participant_dicts if p["payment_status"] == "confirmed"),
             "participant_count": len(participant_dicts),
             "total_paid": str(total_paid),
             "outstanding": str(outstanding),
@@ -272,6 +307,7 @@ def payment_intent(participant_id: str) -> dict:
                 p.name AS participant_name,
                 p.amount_due,
                 p.paid,
+                p.payment_status,
                 b.id AS bill_id,
                 b.title AS bill_title,
                 b.organizer_name,
@@ -284,8 +320,8 @@ def payment_intent(participant_id: str) -> dict:
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Participant not found")
-        if row["paid"]:
-            raise HTTPException(status_code=400, detail="Participant is already marked paid")
+        if row["payment_status"] == "confirmed":
+            raise HTTPException(status_code=400, detail="Participant is already confirmed paid")
 
     amount_due = money(row["amount_due"])
     return {
@@ -295,6 +331,9 @@ def payment_intent(participant_id: str) -> dict:
         "participant_name": row["participant_name"],
         "chain_id": ARC_CHAIN_ID,
         "network": "Arc Testnet",
+        "rpc_url": ARC_RPC_URL,
+        "explorer_url": ARC_EXPLORER_URL,
+        "faucet_url": ARC_FAUCET_URL,
         "token": {
             "symbol": "USDC",
             "address": ARC_USDC_ADDRESS,
@@ -318,8 +357,8 @@ def payment_intent(participant_id: str) -> dict:
     }
 
 
-@app.patch("/api/participants/{participant_id}/paid")
-def update_paid(participant_id: str, payload: PaidUpdate) -> dict:
+@app.patch("/api/participants/{participant_id}/payment-status")
+def update_payment_status(participant_id: str, payload: PaymentStatusUpdate) -> dict:
     with db() as conn:
         participant = conn.execute(
             "SELECT bill_id FROM participants WHERE id = ?",
@@ -328,19 +367,36 @@ def update_paid(participant_id: str, payload: PaidUpdate) -> dict:
         if not participant:
             raise HTTPException(status_code=404, detail="Participant not found")
 
+        status = payload.status
+        tx_hash = payload.tx_hash.strip()
+        if status in {"pending", "confirmed", "failed"} and not tx_hash:
+            raise HTTPException(status_code=400, detail="Transaction hash is required for this status")
+
         conn.execute(
             """
             UPDATE participants
-            SET paid = ?, paid_tx = ?, paid_at = ?
+            SET paid = ?, payment_status = ?, paid_tx = ?, paid_at = ?
             WHERE id = ?
             """,
             (
-                1 if payload.paid else 0,
-                payload.tx_hash.strip() if payload.paid else "",
-                now_iso() if payload.paid else None,
+                1 if status == "confirmed" else 0,
+                status,
+                tx_hash if status != "unpaid" else "",
+                now_iso() if status == "confirmed" else None,
                 participant_id,
             ),
         )
         bill_id = participant["bill_id"]
 
     return get_bill(bill_id)
+
+
+@app.patch("/api/participants/{participant_id}/paid")
+def update_paid(participant_id: str, payload: dict) -> dict:
+    paid = bool(payload.get("paid", True))
+    tx_hash = str(payload.get("tx_hash", ""))
+    status = "confirmed" if paid else "unpaid"
+    return update_payment_status(
+        participant_id,
+        PaymentStatusUpdate(status=status, tx_hash=tx_hash),
+    )

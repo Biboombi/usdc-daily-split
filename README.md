@@ -10,7 +10,7 @@ Create a bill, split it with friends, share a link, and track who has paid. The 
 - Equal split by default
 - Optional custom amounts
 - Shareable bill link
-- Paid/unpaid tracking
+- Pending/confirmed/failed payment tracking
 - Optional Arc Testnet USDC transfer
 - SQLite storage
 - No server-side custody
@@ -47,6 +47,8 @@ Chain: Arc Testnet
 Chain ID: 5042002
 RPC: https://rpc.testnet.arc.network
 USDC: 0x3600000000000000000000000000000000000000
+Explorer: https://testnet.arcscan.app
+Faucet: https://faucet.circle.com
 ```
 
 The backend stores bill records and payment status only. It does not hold funds and does not sign transactions.
@@ -59,7 +61,8 @@ Create bill
 -> Participant clicks Pay USDC
 -> Backend creates a payment intent for that participant
 -> Browser wallet sends Arc Testnet USDC to the organizer
--> App stores the transaction hash and marks that participant paid
+-> App stores the transaction hash as pending
+-> App marks the payment confirmed or failed after the wallet receipt
 ```
 
 Payment intents include:
@@ -97,19 +100,13 @@ Use persistent disk/storage if you want SQLite data to survive redeploys.
 - Treat this as a payment utility, not financial advice.
 - Use Arc Testnet until you intentionally switch networks.
 
-## Future: Embedded Wallet Support
-
-USDC Daily Split currently supports browser-wallet payments.
-
-In the future, the app may support embedded wallets through Turnkey, allowing users without MetaMask or browser wallets to join and pay using email/passkey onboarding.
-
-Planned guardrails:
+## Guardrails
 
 - Payments limited to Arc USDC only
 - Recipient must match the bill organizer
 - Amount must match the participant's share
 - No backend custody of user funds
-- No operational wallet until the app needs fees, refunds, or sponsored gas
+- Browser wallet only
 
 ## Tests
 

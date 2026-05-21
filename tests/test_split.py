@@ -64,10 +64,63 @@ class PaymentIntentTests(unittest.TestCase):
         self.assertEqual(intent["bill_id"], payload["bill"]["id"])
         self.assertEqual(intent["participant_id"], participant_id)
         self.assertEqual(intent["chain_id"], 5042002)
+        self.assertEqual(intent["rpc_url"], "https://rpc.testnet.arc.network")
+        self.assertEqual(intent["explorer_url"], "https://testnet.arcscan.app")
         self.assertEqual(intent["token"]["symbol"], "USDC")
+        self.assertEqual(intent["token"]["address"], "0x3600000000000000000000000000000000000000")
         self.assertEqual(intent["transfer"]["amount"], "5.00")
         self.assertEqual(intent["transfer"]["amount_units"], "5000000")
         self.assertEqual(intent["transfer"]["to"], payload["bill"]["organizer_wallet"])
+
+    def test_config_matches_arc_testnet_docs(self):
+        response = self.client.get("/api/config")
+
+        self.assertEqual(response.status_code, 200)
+        config = response.json()
+        self.assertEqual(config["chainId"], 5042002)
+        self.assertEqual(config["rpcUrl"], "https://rpc.testnet.arc.network")
+        self.assertEqual(config["usdcAddress"], "0x3600000000000000000000000000000000000000")
+        self.assertEqual(config["usdcDecimals"], 6)
+        self.assertEqual(config["nativeCurrency"], {"name": "USDC", "symbol": "USDC", "decimals": 18})
+        self.assertEqual(config["blockExplorerUrl"], "https://testnet.arcscan.app")
+        self.assertEqual(config["faucetUrl"], "https://faucet.circle.com")
+
+    def test_payment_status_flow_tracks_pending_and_confirmed(self):
+        created = self.client.post(
+            "/api/bills",
+            json={
+                "title": "Dinner",
+                "total_amount": "10.00",
+                "organizer_name": "Alex",
+                "organizer_wallet": "0x8075dE962BcEf1dF183b82dAD30Ac260F61798fF",
+                "participants": [{"name": "Me"}, {"name": "Friend"}],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        participant_id = created.json()["participants"][0]["id"]
+        tx_hash = "0x" + "a" * 64
+
+        pending = self.client.patch(
+            f"/api/participants/{participant_id}/payment-status",
+            json={"status": "pending", "tx_hash": tx_hash},
+        )
+        self.assertEqual(pending.status_code, 200)
+        pending_participant = pending.json()["participants"][0]
+        self.assertEqual(pending_participant["payment_status"], "pending")
+        self.assertEqual(pending_participant["paid"], 0)
+        self.assertEqual(pending_participant["paid_tx"], tx_hash)
+        self.assertEqual(pending.json()["summary"]["total_paid"], "0.00")
+
+        confirmed = self.client.patch(
+            f"/api/participants/{participant_id}/payment-status",
+            json={"status": "confirmed", "tx_hash": tx_hash},
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        confirmed_participant = confirmed.json()["participants"][0]
+        self.assertEqual(confirmed_participant["payment_status"], "confirmed")
+        self.assertEqual(confirmed_participant["paid"], 1)
+        self.assertEqual(confirmed_participant["paid_tx"], tx_hash)
+        self.assertEqual(confirmed.json()["summary"]["total_paid"], "5.00")
 
     def test_delete_bill_removes_bill(self):
         created = self.client.post(

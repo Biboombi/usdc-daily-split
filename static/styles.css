@@ -246,6 +246,15 @@ code {
   overflow-wrap: anywhere;
 }
 
+.tx-link {
+  display: block;
+  margin-top: 7px;
+  color: var(--blue);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -606,11 +615,15 @@ code {
   font-size: 13px;
 }
 
-.status-paid,
-.status-unpaid { font-weight: 800; }
+.status-confirmed,
+.status-unpaid,
+.status-pending,
+.status-failed { font-weight: 800; }
 
-.status-paid { color: var(--green); }
-.status-unpaid { color: var(--amber); }
+.status-confirmed { color: var(--green); }
+.status-unpaid,
+.status-pending { color: var(--amber); }
+.status-failed { color: var(--red); }
 
 .person-actions {
   flex-wrap: wrap;
